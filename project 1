@@ -1,0 +1,94 @@
+#!/opt/anaconda/envs/bd9/bin/python
+
+import sys
+import re
+import pandas as pd
+import os
+import json
+import pickle
+from urllib.parse import urlparse
+from urllib.request import urlretrieve, unquote
+from sklearn import pipeline, preprocessing
+
+
+def url2domain(url):
+    try:
+        a = urlparse(unquote(url.strip()))
+        if (a.scheme in ['http','https']):
+            b = re.search("(?:www\.)?(.*)",a.netloc).group(1)
+            if b is not None:
+                return str(b).strip()
+            else:
+                return ''
+        else:
+            return ''
+    except:
+        return
+
+def preprocessing_data (dataframe):
+    d = []
+    for i, row in dataframe.iterrows():
+        gender = row.get('gender')
+        age = row.get('age')
+        uid = row.get('uid')
+        user_json = row.get('user_json')
+        urls = [url2domain(i['url']) for i in json.loads(user_json)['visits']]
+        d.append({
+            'gender':gender,
+            'age' : age,
+            'uid' : uid,
+            'urls': " ".join(urls)
+        })
+
+    X = pd.DataFrame(d)    
+    return X
+
+import re
+GROUPING_SPACE_REGEX = re.compile(r'([^\w]|[+])', re.UNICODE)
+def simple_word_tokenize(text, _split=GROUPING_SPACE_REGEX.split):
+    return [t for t in _split(text.lower()) if len(t)>1 and not t.isspace()]
+
+def token_r(text):
+    words = simple_word_tokenize(text)
+    return [x for x in words if len(x)>=2]
+
+def return_initial_age(age_):
+    if age_ == 0:
+        return '18-24'
+    elif age_ == 1:
+        return  '25-34'
+    elif age_ == 2:
+        return '35-44'
+    elif age_ == 3:
+        return '45-54'
+    elif age_ == 4:
+        return '>=55'
+    
+
+if __name__ == '__main__':
+
+    columns=['gender','age','uid','user_json']
+
+    df = pd.read_table(
+        sys.stdin, 
+        sep='\t', 
+        header=None, 
+        names=columns
+    )
+
+    model_file = "project01/project01_model_v1.pickle"
+    clf_rf = pickle.load(open(model_file, 'rb'))
+    
+    X = preprocessing_data(df)
+    
+    q = clf_rf.predict(X['urls'])
+    result = pd.DataFrame(q).rename(columns = {0:'gender',
+                                                 1:'age'})
+    result['gender'] = result['gender'].apply(lambda x: 'M' if x==1 else 'F')
+    result['uid'] = X['uid']
+    result['age'] = result['age'].apply(return_initial_age)
+    
+    output = result[['uid', 'gender', 'age']]
+    output.sort_values(by='uid',axis = 0, ascending = True, inplace = True)
+    sys.stdout.write(output.to_json(orient='records'))
+      
