@@ -1,0 +1,7 @@
+def process_url(x):
+    list_ = pd.io.json.json_normalize(
+                    json.loads(x.user_json),
+                    record_path = 'visits')\
+                    .sort_values(by = 'timestamp')['url']\
+                    .transform(lambda x: url2domain(x)).tolist()
+    return " ".join(map(str, list_))
